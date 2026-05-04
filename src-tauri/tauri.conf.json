@@ -17,16 +17,12 @@
         "decorations": false,
         "transparent": true,
         "resizable": false,
-        "center": true
+        "center": true,
+        "dragDropEnabled": true
       }
     ],
     "security": {
       "csp": null
-    }
-  },
-  "plugins": {
-    "shell": {
-      "open": true
     }
   }
 }
