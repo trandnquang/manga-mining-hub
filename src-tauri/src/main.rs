@@ -15,10 +15,8 @@ use futures_util::StreamExt;
 use tokio::sync::{oneshot, broadcast};
 
 lazy_static! {
-    // Kênh truyền lệnh Stop tốc độ cao
     static ref MINING_STOP_TX: broadcast::Sender<()> = broadcast::channel(1).0;
     static ref MOKURO_STOP_TX: broadcast::Sender<()> = broadcast::channel(1).0;
-    // Theo dõi tiến trình con để tiêu diệt triệt để khi App đóng đột ngột
     static ref ACTIVE_MOKURO_PID: Mutex<Option<u32>> = Mutex::new(None);
 }
 
@@ -29,13 +27,12 @@ fn get_engine_dir() -> PathBuf {
     path
 }
 
-// Hàm giết Zombie Process bọc thép cho Windows
 fn kill_process_tree(pid: u32) {
     #[cfg(target_os = "windows")]
     {
         let _ = std::process::Command::new("taskkill")
             .args(["/F", "/T", "/PID", &pid.to_string()])
-            .output(); // Sync call để đảm bảo nó chết ngay lập tức
+            .output(); 
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -54,7 +51,7 @@ async fn download_file(window: &Window, url: &str, dest: &Path, file_name_log: &
     let mut downloaded: f64 = 0.0;
     let mut stream = res.bytes_stream();
 
-    let _ = window.emit("install-log", format!("[DOWNLOAD] Đang tải {}...", file_name_log));
+    let _ = window.emit("install-log", format!("[DOWNLOAD] Downloading {}...", file_name_log));
 
     while let Some(item) = stream.next().await {
         let chunk = item.map_err(|e| e.to_string())?;
@@ -119,7 +116,7 @@ async fn run_cmd_and_stream(window: &Window, mut cmd: Command, log_prefix: &str)
     });
 
     let status = child.wait().await.map_err(|e| e.to_string())?;
-    if !status.success() { return Err(format!("Lệnh thất bại với mã lỗi: {}", status)); }
+    if !status.success() { return Err(format!("Command failed with exit code: {}", status)); }
     Ok(())
 }
 
@@ -140,7 +137,7 @@ async fn install_engine(window: Window, mode: String) -> Result<(), String> {
     let python_exe = python_dir.join("python.exe");
 
     download_file(&window, "https://www.python.org/ftp/python/3.10.11/python-3.10.11-embed-amd64.zip", &py_zip_path, "Python Core").await?;
-    let _ = window.emit("install-log", "[SYSTEM] Giải nén Python...".to_string());
+    let _ = window.emit("install-log", "[SYSTEM] Extracting Python Environment...".to_string());
     
     let py_zip_path_clone = py_zip_path.clone();
     let python_dir_clone = python_dir.clone();
@@ -157,7 +154,7 @@ async fn install_engine(window: Window, mode: String) -> Result<(), String> {
     }
 
     download_file(&window, "https://bootstrap.pypa.io/get-pip.py", &get_pip_path, "PIP Installer").await?;
-    let _ = window.emit("install-log", "[SYSTEM] Khởi tạo hệ thống thư viện...".to_string());
+    let _ = window.emit("install-log", "[SYSTEM] Initializing Library Manager...".to_string());
     
     let mut cmd_pip = Command::new(&python_exe);
     cmd_pip.arg(&get_pip_path);
@@ -165,11 +162,11 @@ async fn install_engine(window: Window, mode: String) -> Result<(), String> {
     let _ = run_cmd_and_stream(&window, cmd_pip, "PIP").await; 
 
     if !python_dir.join("Scripts").join("pip.exe").exists() {
-        return Err("Không thể tạo lõi PIP. Vui lòng tắt Diệt virus hoặc cấp quyền ổ đĩa.".to_string());
+        return Err("Failed to create PIP core. Please disable your Antivirus or check disk permissions.".to_string());
     }
     
     let _ = window.emit("install-progress", 0);
-    let _ = window.emit("install-log", format!("[SYSTEM] Đang kéo PyTorch Core (Mode: {}) - Có thanh tiến trình ở dưới...", mode.to_uppercase()));
+    let _ = window.emit("install-log", format!("[SYSTEM] Fetching PyTorch Core (Mode: {}) - Refer to the progress bar below...", mode.to_uppercase()));
     let mut cmd_torch = Command::new(&python_exe);
 
     cmd_torch.args(["-m", "pip", "install", "--no-color", "--no-warn-script-location", "torch", "torchvision"]);
@@ -184,7 +181,7 @@ async fn install_engine(window: Window, mode: String) -> Result<(), String> {
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(60)) => {
                     minutes += 1;
-                    let _ = w_heartbeat.emit("install-log", format!("[SYSTEM] ... Vẫn đang kéo AI Model ({} phút).", minutes));
+                    let _ = w_heartbeat.emit("install-log", format!("[SYSTEM] ... Background download in progress ({} minutes elapsed).", minutes));
                 }
                 _ = &mut rx => { break; }
             }
@@ -194,7 +191,7 @@ async fn install_engine(window: Window, mode: String) -> Result<(), String> {
     run_cmd_and_stream(&window, cmd_torch, "TORCH").await?;
     let _ = tx.send(()); 
 
-    let _ = window.emit("install-log", "[SYSTEM] Đang cài đặt Mokuro Engine...".to_string());
+    let _ = window.emit("install-log", "[SYSTEM] Installing Mokuro Extraction Engine...".to_string());
     let mut cmd_mokuro = Command::new(&python_exe);
     cmd_mokuro.args(["-m", "pip", "install", "--no-color", "--no-warn-script-location", "mokuro"]);
     run_cmd_and_stream(&window, cmd_mokuro, "MOKURO").await?;
@@ -226,7 +223,6 @@ async fn run_mokuro(window: Window, path: String) -> Result<(), String> {
 
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     
-    // Ghi nhận PID để giết nếu App tắt đột ngột
     let pid = child.id().expect("Failed to get Mokuro PID");
     *ACTIVE_MOKURO_PID.lock().unwrap() = Some(pid);
     
@@ -267,7 +263,6 @@ async fn run_mokuro(window: Window, path: String) -> Result<(), String> {
         }
     });
 
-    // Lắng nghe lệnh Cancel từ React
     let mut stop_rx = MOKURO_STOP_TX.subscribe();
 
     tokio::select! {
@@ -280,7 +275,7 @@ async fn run_mokuro(window: Window, path: String) -> Result<(), String> {
         _ = stop_rx.recv() => {
             kill_process_tree(pid);
             *ACTIVE_MOKURO_PID.lock().unwrap() = None;
-            let _ = window.emit("mokuro-log", "CRITICAL: Đã ép dừng (Force Stop) Mokuro.".to_string());
+            let _ = window.emit("mokuro-log", "CRITICAL: Mokuro execution was forcefully stopped.".to_string());
             let _ = window.emit("mokuro-stopped", ());
         }
     }
@@ -336,7 +331,6 @@ async fn start_mining(window: Window, target_dir: String, delay_ms: u64) -> Resu
     let mut previous_buffer: Vec<u8> = Vec::new();
 
     tokio::spawn(async move {
-        // tokio::select! cho phép hủy bộ đếm 3 giây ngay lập tức nếu user ấn Stop
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_millis(3000)) => {}
             _ = stop_rx.recv() => { 
@@ -348,12 +342,12 @@ async fn start_mining(window: Window, target_dir: String, delay_ms: u64) -> Resu
         loop {
             let capture_future = async {
                 let screens = match Screen::all() { Ok(s) => s, Err(e) => { let _ = window.emit("mining-log", format!("FATAL: {}", e)); return false; } };
-                let screen = match screens.first() { Some(s) => s, None => { let _ = window.emit("mining-log", "FATAL: No display."); return false; } };
+                let screen = match screens.first() { Some(s) => s, None => { let _ = window.emit("mining-log", "FATAL: No primary display detected."); return false; } };
 
                 if let Ok(image) = screen.capture() {
                     let current_buffer = image.as_raw().clone();
                     if !previous_buffer.is_empty() && are_images_similar(&previous_buffer, &current_buffer) {
-                        let _ = window.emit("mining-log", "DETECTED END OF VOLUME. Auto-stopping.");
+                        let _ = window.emit("mining-log", "DETECTED END OF VOLUME. Auto-stopping process.");
                         return false;
                     }
                     let file_path = Path::new(&target_dir).join(format!("page_{:04}.png", page_count));
@@ -368,7 +362,6 @@ async fn start_mining(window: Window, target_dir: String, delay_ms: u64) -> Resu
 
             if !capture_future.await { break; }
 
-            // tokio::select! thay thế cho thread::sleep để cắt ngang luồng ngay tức khắc
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_millis(delay_ms)) => {}
                 _ = stop_rx.recv() => { break; }
@@ -392,7 +385,6 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             check_mokuro, install_engine, run_mokuro, stop_mokuro, list_volumes, create_volume, delete_volume, start_mining, stop_mining
         ])
-        // Gắn móc (Hook) để dọn rác khi User ấn "X" tắt app
         .on_window_event(|_window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
                 let _ = MINING_STOP_TX.send(());

@@ -104,14 +104,16 @@ export default function App() {
       });
       const done = await listen("install-done", () => {
         if (!isMounted) return;
-        setLogs((p) => [...p.slice(-500), "[SYSTEM] Engine Ready!"]);
+        setLogs((p) => [
+          ...p.slice(-500),
+          "[SYSTEM] AI Engine Initialization Complete!",
+        ]);
         setTimeout(() => setStatus("select_parent"), 1500);
       });
       const mLog = await listen<string>("mokuro-log", (e) => {
         if (isMounted) setLogs((p) => [...p.slice(-500), e.payload]);
       });
 
-      // FIX UX: Lắng nghe sự kiện Mokuro bị hủy để Reset UI
       const mStop = await listen("mokuro-stopped", () => {
         if (isMounted) setStatus("manage_volumes");
       });
@@ -159,7 +161,10 @@ export default function App() {
       });
       setVolumes(folders);
     } catch (e) {
-      setLogs((p) => [...p.slice(-500), `[ERROR] Load volumes: ${e}`]);
+      setLogs((p) => [
+        ...p.slice(-500),
+        `[ERROR] Failed to load volumes: ${e}`,
+      ]);
     }
   };
   const handleCreateVol = async () => {
@@ -180,7 +185,7 @@ export default function App() {
     setStatus("mining");
     setLogs((p) => [
       ...p.slice(-500),
-      "[SYSTEM] Auto-miner starting. F11 NOW.",
+      "[SYSTEM] Auto-miner starting. SWITCH TO FULLSCREEN NOW (F11).",
     ]);
     await invoke("start_mining", {
       targetDir: `${parentDir}\\${activeVol}`,
@@ -191,7 +196,10 @@ export default function App() {
   const startMokuro = async () => {
     if (!parentDir) return;
     setStatus("processing_mokuro");
-    setLogs((p) => [...p.slice(-500), "[SYSTEM] Extractor ignited..."]);
+    setLogs((p) => [
+      ...p.slice(-500),
+      "[SYSTEM] Mokuro Extraction Engine Ignited...",
+    ]);
     try {
       await invoke("run_mokuro", { path: parentDir });
     } catch (err) {
@@ -235,7 +243,7 @@ export default function App() {
             onClick={() => setAutoScroll(true)}
             className="ml-auto flex items-center gap-1 text-sky-400 hover:text-sky-300 font-bold text-[9px] uppercase tracking-wider bg-sky-900/30 px-2 py-0.5 rounded cursor-pointer"
           >
-            ↓ Cuộn xuống đáy
+            ↓ Scroll to bottom
           </button>
         )}
       </div>
@@ -275,7 +283,8 @@ export default function App() {
             Init AI Engine
           </h1>
           <p className="text-sm text-slate-400 mb-8 max-w-md text-center shrink-0">
-            Yêu cầu cài đặt môi trường xử lý Ảnh và Ngôn ngữ (PyTorch).
+            Requires installation of the Image and Language processing
+            environment (PyTorch).
           </p>
           {status === "setup_engine" ? (
             <div className="flex gap-6 w-full max-w-2xl shrink-0">
@@ -285,7 +294,8 @@ export default function App() {
                   Lite Mode (CPU)
                 </h2>
                 <p className="text-xs text-slate-400 text-center mb-4 flex-1">
-                  Tốc độ chậm. Khuyên dùng cho Laptop không có card rời NVIDIA.
+                  Slower processing speed. Recommended for laptops without a
+                  dedicated NVIDIA GPU.
                 </p>
                 <button
                   onClick={() => {
@@ -294,7 +304,7 @@ export default function App() {
                     invoke("install_engine", { mode: "lite" }).catch((err) => {
                       setLogs((p) => [
                         ...p.slice(-500),
-                        `[FATAL ERROR] Cài đặt thất bại: ${err}`,
+                        `[FATAL ERROR] Installation failed: ${err}`,
                       ]);
                       setStatus("setup_engine");
                     });
@@ -310,8 +320,8 @@ export default function App() {
                   Pro Mode (GPU)
                 </h2>
                 <p className="text-xs text-slate-400 text-center mb-4 flex-1">
-                  Tối đa hiệu suất bằng nhân CUDA 11.8. Bắt buộc dùng VGA
-                  NVIDIA.
+                  Maximum performance utilizing CUDA 11.8 cores. Requires a
+                  dedicated NVIDIA GPU.
                 </p>
                 <button
                   onClick={() => {
@@ -320,7 +330,7 @@ export default function App() {
                     invoke("install_engine", { mode: "pro" }).catch((err) => {
                       setLogs((p) => [
                         ...p.slice(-500),
-                        `[FATAL ERROR] Cài đặt thất bại: ${err}`,
+                        `[FATAL ERROR] Installation failed: ${err}`,
                       ]);
                       setStatus("setup_engine");
                     });
@@ -408,7 +418,7 @@ export default function App() {
                   <input
                     value={newVolName}
                     onChange={(e) => setNewVolName(e.target.value)}
-                    placeholder="New vol name..."
+                    placeholder="New volume name..."
                     className="bg-transparent text-xs outline-none w-full"
                     disabled={status !== "manage_volumes"}
                   />
@@ -467,7 +477,7 @@ export default function App() {
                   <div className="flex flex-1 flex-col gap-3 bg-slate-950/30 border border-slate-800 rounded-lg p-4">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-slate-400 uppercase">
-                        Delay (ms)
+                        Capture Delay (ms)
                       </span>
                       <input
                         type="number"
@@ -489,7 +499,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* FIX UX: Nút dừng Mokuro khi đang chạy */}
             {(status === "manage_volumes" || status === "processing_mokuro") &&
               (status === "processing_mokuro" ? (
                 <button
